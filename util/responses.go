@@ -5,20 +5,46 @@ import (
 	"net/http"
 )
 
-func FailApiResponse(c *gin.Context, httpStatus int, err interface{}) {
+type CustomHttpError interface {
+	GetHttpStatus() int
+	Error() string
+}
+
+// FailApiResponse writes a response to the body with given HttpStatus
+// Optionally logs to the app.log file
+func FailApiResponse(c *gin.Context, httpStatus int, err any) {
 	if httpStatus == 0 {
 		httpStatus = http.StatusInternalServerError
 	}
 
-	//var displayErrors interface{}
 	switch errV := err.(type) {
-	case error: // Log error and continue without doing anything...
+	case error:
 		LogContextTrace(c, "Error", errV.Error())
+		c.Abort()
+		c.XML(http.StatusInternalServerError, gin.H{
+			"status": 0,
+			"errors": errV.Error(),
+		})
+		return
 	case string: // Direct error message is given; this can be returned
 		c.Abort()
-		c.PureJSON(httpStatus, map[string]interface{}{
+		c.XML(httpStatus, gin.H{
+			"status": 0,
+			"errors": []string{errV},
+		})
+		return
+	case []string: // Direct error message is given; this can be returned
+		c.Abort()
+		c.XML(httpStatus, gin.H{
 			"status": 0,
 			"errors": errV,
+		})
+		return
+	case CustomHttpError:
+		c.Abort()
+		c.XML(errV.GetHttpStatus(), gin.H{
+			"status": 0,
+			"errors": errV.Error(),
 		})
 		return
 	}
@@ -26,27 +52,26 @@ func FailApiResponse(c *gin.Context, httpStatus int, err interface{}) {
 	switch httpStatus {
 	case http.StatusUnprocessableEntity:
 		c.Abort()
-		c.PureJSON(httpStatus, map[string]interface{}{
+		c.XML(httpStatus, gin.H{
 			"status": 0,
 			"errors": "Invalid request",
 		})
 	default:
 		c.AbortWithStatus(httpStatus)
+		c.XML(httpStatus, gin.H{
+			"status": 0,
+			"errors": "Unknown error",
+		})
+		return
 	}
 }
 
-func SuccessApiResponse(c *gin.Context, message string, data interface{}) {
-	// PureJSON, unlike JSON, does not replace special html characters with their unicode entities.
-	c.PureJSON(http.StatusOK,
-		map[string]interface{}{
+// SuccessApiResponse writes a response to the body with Status 200 (OK)
+func SuccessApiResponse(c *gin.Context, message string, data any) {
+	c.XML(http.StatusOK,
+		gin.H{
 			"status":  1,
 			"message": message,
 			"data":    data,
-			"header":  getDataForHeader(c),
 		})
-}
-
-func getDataForHeader(_ *gin.Context) map[string]interface{} {
-	// Populate header data here
-	return nil
 }
